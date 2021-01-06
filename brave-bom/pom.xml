@@ -18,7 +18,7 @@
 
   <groupId>io.zipkin.brave</groupId>
   <artifactId>brave-bom</artifactId>
-  <version>5.12.5-SNAPSHOT</version>
+  <version>5.13.4-SNAPSHOT</version>
   <name>Brave BOM</name>
   <description>Bill Of Materials POM for all Brave artifacts</description>
   <packaging>pom</packaging>
@@ -34,8 +34,10 @@
     <main.basedir>${project.basedir}/..</main.basedir>
 
     <!-- use the same values in ../pom.xml -->
-    <zipkin.version>2.21.1</zipkin.version>
-    <zipkin-reporter.version>2.15.0</zipkin-reporter.version>
+    <zipkin.version>2.23.2</zipkin.version>
+    <zipkin-reporter.version>2.16.3</zipkin-reporter.version>
+
+    <nexus-staging-maven-plugin.version>1.6.8</nexus-staging-maven-plugin.version>
   </properties>
 
   <organization>
@@ -68,14 +70,14 @@
   </developers>
 
   <distributionManagement>
-    <repository>
-      <id>bintray</id>
-      <url>https://api.bintray.com/maven/openzipkin/maven/brave/;publish=1</url>
-    </repository>
     <snapshotRepository>
-      <id>jfrog-snapshots</id>
-      <url>https://oss.jfrog.org/artifactory/oss-snapshot-local</url>
+      <id>ossrh</id>
+      <url>https://oss.sonatype.org/content/repositories/snapshots</url>
     </snapshotRepository>
+    <repository>
+      <id>ossrh</id>
+      <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+    </repository>
   </distributionManagement>
 
   <issueManagement>
@@ -95,16 +97,6 @@
       <dependency>
         <groupId>io.zipkin.zipkin2</groupId>
         <artifactId>zipkin</artifactId>
-        <version>${zipkin.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.zipkin.zipkin2</groupId>
-        <artifactId>zipkin-tests</artifactId>
-        <version>${zipkin.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.zipkin.zipkin2</groupId>
-        <artifactId>zipkin-junit</artifactId>
         <version>${zipkin.version}</version>
       </dependency>
       <dependency>
@@ -284,26 +276,45 @@
       </dependency>
     </dependencies>
   </dependencyManagement>
+
   <profiles>
     <profile>
-      <id>sonatype</id>
-      <distributionManagement>
-        <repository>
-          <id>sonatype</id>
-          <url>https://oss.sonatype.org/service/local/staging/deploy/maven2</url>
-        </repository>
-      </distributionManagement>
+      <id>release</id>
       <build>
         <plugins>
+          <plugin>
+            <groupId>org.sonatype.plugins</groupId>
+            <artifactId>nexus-staging-maven-plugin</artifactId>
+            <version>${nexus-staging-maven-plugin.version}</version>
+            <extensions>true</extensions>
+            <configuration>
+              <serverId>ossrh</serverId>
+              <nexusUrl>https://oss.sonatype.org/</nexusUrl>
+              <autoReleaseAfterClose>true</autoReleaseAfterClose>
+            </configuration>
+          </plugin>
+
+          <plugin>
+            <artifactId>maven-deploy-plugin</artifactId>
+            <version>3.0.0-M1</version>
+          </plugin>
+
           <plugin>
             <artifactId>maven-gpg-plugin</artifactId>
             <version>1.6</version>
             <executions>
               <execution>
-                <id>sign-release-artifacts</id>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
                 <goals>
                   <goal>sign</goal>
                 </goals>
+                <configuration>
+                  <gpgArguments>
+                    <arg>--pinentry-mode</arg>
+                    <arg>loopback</arg>
+                  </gpgArguments>
+                </configuration>
               </execution>
             </executions>
           </plugin>

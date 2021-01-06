@@ -18,7 +18,7 @@
   <parent>
     <groupId>io.zipkin.brave</groupId>
     <artifactId>brave-instrumentation-parent</artifactId>
-    <version>5.12.5-SNAPSHOT</version>
+    <version>5.13.4-SNAPSHOT</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
 
@@ -30,6 +30,8 @@
     <module.name>brave.okhttp3</module.name>
 
     <main.basedir>${project.basedir}/../..</main.basedir>
+    <!-- Last version before Call.timeout was added -->
+    <old-okhttp.version>3.11.0</old-okhttp.version>
     <retrofit.version>2.9.0</retrofit.version>
   </properties>
 
@@ -37,21 +39,19 @@
     <dependency>
       <groupId>${project.groupId}</groupId>
       <artifactId>brave-instrumentation-http</artifactId>
+      <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>com.squareup.okhttp3</groupId>
       <artifactId>okhttp</artifactId>
+      <version>${okhttp.version}</version>
       <scope>provided</scope>
     </dependency>
 
     <dependency>
       <groupId>${project.groupId}</groupId>
-      <artifactId>brave-tests</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>${project.groupId}</groupId>
       <artifactId>brave-instrumentation-http-tests</artifactId>
+      <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -65,6 +65,29 @@
     <plugins>
       <plugin>
         <artifactId>maven-invoker-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <groupId>de.qaware.maven</groupId>
+        <artifactId>go-offline-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>resolve-dependencies</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <!-- Add dependencies specific to invoker tests so that they cache on go-offline -->
+          <dynamicDependencies>
+            <DynamicDependency>
+              <groupId>com.squareup.okhttp3</groupId>
+              <artifactId>mockwebserver</artifactId>
+              <version>${old-okhttp.version}</version>
+              <repositoryType>MAIN</repositoryType>
+            </DynamicDependency>
+          </dynamicDependencies>
+        </configuration>
       </plugin>
     </plugins>
   </build>

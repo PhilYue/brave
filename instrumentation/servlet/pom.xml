@@ -18,7 +18,7 @@
   <parent>
     <groupId>io.zipkin.brave</groupId>
     <artifactId>brave-instrumentation-parent</artifactId>
-    <version>5.12.5-SNAPSHOT</version>
+    <version>5.13.4-SNAPSHOT</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
 
@@ -38,6 +38,7 @@
     <dependency>
       <groupId>${project.groupId}</groupId>
       <artifactId>brave-instrumentation-http</artifactId>
+      <version>${project.version}</version>
     </dependency>
     <!-- compile dep on 3.1.0 runtime on 2.5 -->
     <dependency>
@@ -50,6 +51,7 @@
     <dependency>
       <groupId>${project.groupId}</groupId>
       <artifactId>brave-instrumentation-http-tests</artifactId>
+      <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -64,6 +66,35 @@
     <plugins>
       <plugin>
         <artifactId>maven-invoker-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <groupId>de.qaware.maven</groupId>
+        <artifactId>go-offline-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>resolve-dependencies</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <!-- Add dependencies specific to invoker tests so that they cache on go-offline -->
+          <dynamicDependencies>
+            <DynamicDependency>
+              <groupId>javax.servlet</groupId>
+              <artifactId>servlet-api</artifactId>
+              <version>2.5</version>
+              <repositoryType>MAIN</repositoryType>
+            </DynamicDependency>
+            <DynamicDependency>
+              <groupId>org.eclipse.jetty</groupId>
+              <artifactId>jetty-servlet</artifactId>
+              <version>${jetty-servlet25.version}</version>
+              <repositoryType>MAIN</repositoryType>
+            </DynamicDependency>
+          </dynamicDependencies>
+        </configuration>
       </plugin>
     </plugins>
   </build>

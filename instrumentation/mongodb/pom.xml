@@ -18,7 +18,7 @@
   <parent>
     <groupId>io.zipkin.brave</groupId>
     <artifactId>brave-instrumentation-parent</artifactId>
-    <version>5.12.5-SNAPSHOT</version>
+    <version>5.13.4-SNAPSHOT</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
 
@@ -34,7 +34,7 @@
     <main.java.version>1.6</main.java.version>
     <main.signature.artifact>java16</main.signature.artifact>
 
-    <mongodb-driver.version>3.12.5</mongodb-driver.version>
+    <mongodb-driver.version>3.12.7</mongodb-driver.version>
   </properties>
 
   <dependencies>
@@ -47,6 +47,7 @@
     <dependency>
       <groupId>${project.groupId}</groupId>
       <artifactId>brave-tests</artifactId>
+      <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>

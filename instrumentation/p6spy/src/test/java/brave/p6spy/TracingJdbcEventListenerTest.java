@@ -27,18 +27,23 @@ import java.sql.DatabaseMetaData;
 import java.sql.SQLException;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.experimental.runners.Enclosed;
 import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
-@RunWith(MockitoJUnitRunner.class)
+@RunWith(Enclosed.class)
 public class TracingJdbcEventListenerTest {
+  @Rule public MockitoRule rule = MockitoJUnit.rule();
   @Mock Connection connection;
   @Mock DatabaseMetaData metaData;
   @Mock StatementInformation statementInformation;
@@ -49,14 +54,14 @@ public class TracingJdbcEventListenerTest {
   String urlWithServiceName = url + "?zipkinServiceName=mysql_service&foo=bar";
   String urlWithEmptyServiceName = url + "?zipkinServiceName=&foo=bar";
   String urlWithWhiteSpace =
-      "jdbc:sqlserver://1.2.3.4;databaseName=mydatabase;applicationName=Microsoft JDBC Driver for SQL Server";
+    "jdbc:sqlserver://1.2.3.4;databaseName=mydatabase;applicationName=Microsoft JDBC Driver for SQL Server";
   P6OptionsRepository p6OptionsRepository;
   P6LogOptions logOptions;
 
   StrictCurrentTraceContext currentTraceContext = StrictCurrentTraceContext.create();
   TestSpanHandler spans = new TestSpanHandler();
   Tracing tracing = Tracing.newBuilder()
-      .currentTraceContext(currentTraceContext).addSpanHandler(spans).build();
+    .currentTraceContext(currentTraceContext).addSpanHandler(spans).build();
 
   @Before public void init() {
     p6OptionsRepository = new P6OptionsRepository();
@@ -119,6 +124,50 @@ public class TracingJdbcEventListenerTest {
 
     verify(span).remoteServiceName("foo");
     verify(span).remoteIpAndPort("1.2.3.4", 5555);
+  }
+
+  @RunWith(Parameterized.class)
+  public static class ParserTest {
+    @Parameterized.Parameters(name = "remoteServiceName for {0} should be '{1}'")
+    public static Object[][] exceptionsTraced() {
+      return new Object[][] {
+        {"?zipkinServiceName=myDatabase&foo=bar", "myDatabase"},
+        {"?zipkinServiceName=my_database&foo=bar", "my_database"},
+        {"?zipkinServiceName=my-database&foo=bar", "my-database"},
+        {"?zipkinServiceName=my-database-1&foo=bar", "my-database-1"},
+        {"?zipkinServiceName=my.database&foo=bar", "my.database"},
+        {"?zipkinServiceName=my-database:5432&foo=bar", "my-database:5432"},
+        {"?zipkinServiceName=my-database@localhost&foo=bar", "my-database@localhost"},
+        {"?zipkinServiceName=my-database", "my-database"},
+        {"?zipkinServiceName=my-database-1&zipkinServiceName=my-database-2", "my-database-1"},
+        {"?zipkinServiceName=", null},
+        {"?zipkinServiceName=&", null},
+        {"", null}
+      };
+    }
+
+    @Rule public MockitoRule rule = MockitoJUnit.rule();
+    @Mock Connection connection;
+    @Mock DatabaseMetaData metaData;
+
+    @Mock Span span;
+
+    @Parameterized.Parameter(0) public String queryString;
+    @Parameterized.Parameter(1) public String remoteServiceName;
+
+    @Test public void parseServerIpAndPort_overridesRemoteServiceNameFromUrlParameter()
+      throws SQLException {
+      when(connection.getMetaData()).thenReturn(metaData);
+      when(metaData.getURL()).thenReturn("jdbc:mysql://1.2.3.4:5555/mydatabase" + queryString);
+
+      new TracingJdbcEventListener(null, false,
+        P6LogOptions.getActiveInstance()).parseServerIpAndPort(connection, span);
+
+      if (remoteServiceName != null) { // shouldn't invoke if no service name was parsed
+        verify(span).remoteServiceName(remoteServiceName);
+      }
+      verify(span).remoteIpAndPort("1.2.3.4", 5555);
+    }
   }
 
   @Test public void parseServerIpAndPort_doesntCrash() throws SQLException {

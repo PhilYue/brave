@@ -25,6 +25,7 @@ import org.bson.Document;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.utility.DockerImageName;
 
 import static java.util.Collections.singletonList;
 
@@ -35,7 +36,9 @@ public abstract class ITMongoDB extends ITRemote { // public because of ClassRul
   static final int MONGODB_PORT = 27017;
 
   @ClassRule
-  public static GenericContainer<?> mongo = new GenericContainer<>("mongo:4.0")
+  public static GenericContainer<?> mongo = new GenericContainer<>(
+    // Use OpenZipkin's small test image, which is multi-arch and doesn't consume Docker Hub quota
+    DockerImageName.parse("ghcr.io/openzipkin/mongodb-alpine:4.0.5"))
     .withExposedPorts(MONGODB_PORT);
 
   @BeforeClass public static void initCollection() {

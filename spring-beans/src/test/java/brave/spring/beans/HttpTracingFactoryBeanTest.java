@@ -21,6 +21,7 @@ import brave.http.HttpSampler;
 import brave.http.HttpServerParser;
 import brave.http.HttpTracing;
 import brave.http.HttpTracingCustomizer;
+import brave.propagation.Propagation;
 import brave.sampler.SamplerFunctions;
 import org.junit.After;
 import org.junit.Test;
@@ -37,6 +38,7 @@ public class HttpTracingFactoryBeanTest {
   public static HttpServerParser SERVER_PARSER = mock(HttpServerParser.class);
   public static HttpRequestParser REQUEST_PARSER = mock(HttpRequestParser.class);
   public static HttpResponseParser RESPONSE_PARSER = mock(HttpResponseParser.class);
+  public static Propagation<String> PROPAGATION = mock(Propagation.class);
 
   XmlBeans context;
 
@@ -70,8 +72,7 @@ public class HttpTracingFactoryBeanTest {
       + "</bean>"
     );
 
-    assertThat(context.getBean("httpTracing", HttpTracing.class))
-      .extracting("clientParser")
+    assertThat(context.getBean("httpTracing", HttpTracing.class).clientParser())
       .isEqualTo(CLIENT_PARSER);
   }
 
@@ -121,8 +122,7 @@ public class HttpTracingFactoryBeanTest {
       + "</bean>"
     );
 
-    assertThat(context.getBean("httpTracing", HttpTracing.class))
-      .extracting("serverParser")
+    assertThat(context.getBean("httpTracing", HttpTracing.class).serverParser())
       .isEqualTo(SERVER_PARSER);
   }
 
@@ -174,6 +174,7 @@ public class HttpTracingFactoryBeanTest {
 
     assertThat(context.getBean("httpTracing", HttpTracing.class))
       .extracting("clientSampler")
+      .usingRecursiveComparison()
       .isEqualTo(HttpSampler.NEVER_SAMPLE);
   }
 
@@ -205,8 +206,7 @@ public class HttpTracingFactoryBeanTest {
       + "</bean>"
     );
 
-    assertThat(context.getBean("httpTracing", HttpTracing.class))
-      .extracting("serverSampler")
+    assertThat(context.getBean("httpTracing", HttpTracing.class).serverSampler())
       .isEqualTo(HttpSampler.NEVER_SAMPLE);
   }
 
@@ -224,6 +224,22 @@ public class HttpTracingFactoryBeanTest {
 
     assertThat(context.getBean("httpTracing", HttpTracing.class).serverRequestSampler())
       .isEqualTo(SamplerFunctions.neverSample());
+  }
+
+  @Test public void propagation() {
+    context = new XmlBeans(""
+      + "<bean id=\"httpTracing\" class=\"brave.spring.beans.HttpTracingFactoryBean\">\n"
+      + "  <property name=\"tracing\">\n"
+      + "    <util:constant static-field=\"" + getClass().getName() + ".TRACING\"/>\n"
+      + "  </property>\n"
+      + "  <property name=\"propagation\">\n"
+      + "    <util:constant static-field=\"" + getClass().getName() + ".PROPAGATION\"/>\n"
+      + "  </property>\n"
+      + "</bean>"
+    );
+
+    assertThat(context.getBean("httpTracing", HttpTracing.class).propagation())
+      .isEqualTo(PROPAGATION);
   }
 
   public static final HttpTracingCustomizer CUSTOMIZER_ONE = mock(HttpTracingCustomizer.class);

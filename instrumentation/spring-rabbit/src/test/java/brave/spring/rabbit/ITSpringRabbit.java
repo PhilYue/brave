@@ -20,15 +20,18 @@ import brave.sampler.SamplerFunction;
 import brave.sampler.SamplerFunctions;
 import brave.test.ITRemote;
 import brave.test.IntegrationTestSpanHandler;
-
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.After;
 import org.junit.AfterClass;
+import org.junit.AssumptionViolatedException;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Rule;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.Exchange;
 import org.springframework.amqp.core.Message;
@@ -46,12 +49,17 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.testcontainers.containers.RabbitMQContainer;
+import org.springframework.messaging.handler.annotation.SendTo;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.utility.DockerImageName;
 
 import static org.springframework.amqp.core.BindingBuilder.bind;
 import static org.springframework.amqp.core.ExchangeBuilder.topicExchange;
 
 abstract class ITSpringRabbit extends ITRemote {
+  static final Logger LOGGER = LoggerFactory.getLogger(ITSpringRabbit.class);
+
   static final String TEST_QUEUE = "test-queue";
   static final Exchange exchange = topicExchange("test-exchange").durable(true).build();
   static final Queue queue = new Queue(TEST_QUEUE);
@@ -61,14 +69,56 @@ abstract class ITSpringRabbit extends ITRemote {
   static final String TEST_QUEUE_BATCH = "test-queue-1";
   static final Exchange exchange_batch = topicExchange("test-exchange-1").durable(true).build();
   static final Queue queue_batch = new Queue(TEST_QUEUE_BATCH);
-  static final Binding binding_batch = bind(queue_batch).to(exchange_batch).with("test.binding.1").noargs();
+  static final Binding binding_batch =
+    bind(queue_batch).to(exchange_batch).with("test.binding.1").noargs();
 
-  static RabbitMQContainer rabbit = new RabbitMQContainer();
+  // for request-reply
+  static final String TEST_EXCHANGE_REQUEST_REPLY = "test-exchange-request-reply";
+  static final String TEST_QUEUE_REQUEST = "test-queue-request";
+  static final String TEST_QUEUE_REPLY = "test-queue-reply";
+  static final Exchange exchange_request_reply =
+    topicExchange(TEST_EXCHANGE_REQUEST_REPLY).durable(true).build();
+  static final Queue queue_request = new Queue(TEST_QUEUE_REQUEST);
+  static final Binding binding_request =
+    bind(queue_request).to(exchange_request_reply).with("test.binding.request").noargs();
+  static final Queue queue_reply = new Queue(TEST_QUEUE_REPLY);
+  static final Binding binding_reply =
+    bind(queue_reply).to(exchange_request_reply).with("test.binding.reply").noargs();
+
+  // Use a ghcr.io mirror to prevent build outages due to Docker Hub pull quotas
+  static final DockerImageName IMAGE =
+    DockerImageName.parse("ghcr.io/openzipkin/rabbitmq-management-alpine:latest");
+  static final int RABBIT_PORT = 5672;
+
+  static final class RabbitMQContainer extends GenericContainer<RabbitMQContainer> {
+    RabbitMQContainer(DockerImageName image) {
+      super(image);
+      addExposedPorts(RABBIT_PORT);
+      this.waitStrategy = Wait.forLogMessage(".*Server startup complete.*", 1)
+        .withStartupTimeout(Duration.ofSeconds(60));
+    }
+  }
+
+  static RabbitMQContainer rabbit;
 
   @BeforeClass public static void startRabbit() {
-    rabbit.start();
-    CachingConnectionFactory connectionFactory =
-      new CachingConnectionFactory(rabbit.getContainerIpAddress(), rabbit.getAmqpPort());
+    if ("true".equals(System.getProperty("docker.skip"))) {
+      throw new AssumptionViolatedException("Skipping startup of docker " + IMAGE);
+    }
+
+    try {
+      LOGGER.info("Starting docker image " + IMAGE);
+      rabbit = new RabbitMQContainer(IMAGE);
+      rabbit.start();
+    } catch (Throwable e) {
+      throw new AssumptionViolatedException(
+        "Couldn't start docker image " + IMAGE + ": " + e.getMessage(), e);
+    }
+
+    CachingConnectionFactory connectionFactory = new CachingConnectionFactory(
+      rabbit.getContainerIpAddress(),
+      rabbit.getMappedPort(RABBIT_PORT)
+    );
     try {
       RabbitAdmin amqpAdmin = new RabbitAdmin(connectionFactory);
       amqpAdmin.declareExchange(exchange);
@@ -78,13 +128,19 @@ abstract class ITSpringRabbit extends ITRemote {
       amqpAdmin.declareExchange(exchange_batch);
       amqpAdmin.declareQueue(queue_batch);
       amqpAdmin.declareBinding(binding_batch);
+
+      amqpAdmin.declareExchange(exchange_request_reply);
+      amqpAdmin.declareQueue(queue_request);
+      amqpAdmin.declareQueue(queue_reply);
+      amqpAdmin.declareBinding(binding_request);
+      amqpAdmin.declareBinding(binding_reply);
     } finally {
       connectionFactory.destroy();
     }
   }
 
   @AfterClass public static void kiwwTheWabbit() {
-    rabbit.stop();
+    if (rabbit != null) rabbit.stop();
   }
 
   @Rule public IntegrationTestSpanHandler producerSpanHandler = new IntegrationTestSpanHandler();
@@ -108,7 +164,7 @@ abstract class ITSpringRabbit extends ITRemote {
   );
 
   CachingConnectionFactory connectionFactory =
-    new CachingConnectionFactory(rabbit.getContainerIpAddress(), rabbit.getAmqpPort());
+    new CachingConnectionFactory(rabbit.getContainerIpAddress(), rabbit.getMappedPort(RABBIT_PORT));
   AnnotationConfigApplicationContext producerContext = new AnnotationConfigApplicationContext();
   AnnotationConfigApplicationContext consumerContext = new AnnotationConfigApplicationContext();
 
@@ -118,6 +174,8 @@ abstract class ITSpringRabbit extends ITRemote {
     producerContext.registerBean(Binding.class, () -> binding);
     producerContext.register(RabbitProducerConfig.class);
     producerContext.registerBean("binding_batch", Binding.class, () -> binding_batch);
+    producerContext.registerBean("binding_request", Binding.class, () -> binding_request);
+    producerContext.registerBean("binding_reply", Binding.class, () -> binding_reply);
     producerContext.refresh();
 
     consumerContext.registerBean(SpringRabbitTracing.class, () -> consumerTracing);
@@ -125,6 +183,8 @@ abstract class ITSpringRabbit extends ITRemote {
     consumerContext.registerBean(Binding.class, () -> binding);
     consumerContext.register(RabbitConsumerConfig.class);
     consumerContext.registerBean("binding_batch", Binding.class, () -> binding_batch);
+    consumerContext.registerBean("binding_request", Binding.class, () -> binding_request);
+    consumerContext.registerBean("binding_reply", Binding.class, () -> binding_reply);
     consumerContext.refresh();
   }
 
@@ -205,6 +265,14 @@ abstract class ITSpringRabbit extends ITRemote {
     @Bean BatchConsumer batchRabbitConsumer() {
       return new BatchConsumer();
     }
+
+    @Bean RequestConsumer requestConsumer() {
+      return new RequestConsumer();
+    }
+
+    @Bean ReplyConsumer replyConsumer() {
+      return new ReplyConsumer();
+    }
   }
 
   static class HelloWorldProducer {
@@ -221,10 +289,6 @@ abstract class ITSpringRabbit extends ITRemote {
       MessageProperties properties = new MessageProperties();
       properties.setHeader("not-zipkin-header", "fakeValue");
       Message message = MessageBuilder.withBody(messageBody).andProperties(properties).build();
-      rabbitTemplate.send(binding.getRoutingKey(), message);
-    }
-
-    void send(Message message) {
       rabbitTemplate.send(binding.getRoutingKey(), message);
     }
   }
@@ -279,10 +343,13 @@ abstract class ITSpringRabbit extends ITRemote {
     rabbitProducer.send();
   }
 
-  void produceMessage(String exchange, Binding binding, Message message) {
-    RabbitTemplate rabbitTemplate = new RabbitTemplate(connectionFactory);
-    rabbitTemplate.setExchange(exchange);
-    new HelloWorldProducer(rabbitTemplate, binding).send(message);
+  static class RequestConsumer {
+
+    @RabbitListener(queues = TEST_QUEUE_REQUEST)
+    @SendTo(TEST_QUEUE_REPLY)
+    String testReceiveRabbit(Message message) {
+      return new String(message.getBody()) + " test reply";
+    }
   }
 
   void produceUntracedMessage() {
@@ -315,5 +382,35 @@ abstract class ITSpringRabbit extends ITRemote {
       throw new AssertionError(e);
     }
     return consumer.capturedMessages;
+  }
+
+  Message awaitReplyMessageConsumed() {
+    ReplyConsumer consumer = consumerContext.getBean(ReplyConsumer.class);
+    try {
+      consumer.getCountDownLatch().await(3, TimeUnit.SECONDS);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new AssertionError(e);
+    }
+    return consumer.capturedMessage;
+  }
+
+  static class ReplyConsumer {
+    CountDownLatch countDownLatch;
+    Message capturedMessage;
+
+    ReplyConsumer() {
+      this.countDownLatch = new CountDownLatch(1);
+    }
+
+    @RabbitListener(queues = TEST_QUEUE_REPLY)
+    void testReceiveRabbit(Message message) {
+      this.capturedMessage = message;
+      this.countDownLatch.countDown();
+    }
+
+    CountDownLatch getCountDownLatch() {
+      return countDownLatch;
+    }
   }
 }

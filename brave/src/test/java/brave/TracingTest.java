@@ -16,6 +16,7 @@ package brave;
 import brave.handler.FinishedSpanHandler;
 import brave.handler.MutableSpan;
 import brave.handler.SpanHandler;
+import brave.internal.Platform;
 import brave.propagation.B3SinglePropagation;
 import brave.propagation.Propagation;
 import brave.propagation.StrictCurrentTraceContext;
@@ -70,6 +71,14 @@ public class TracingTest {
     assertThat(spans).isEmpty();
   }
 
+  @Test public void localEndpointDefaults() {
+    Tracing tracing = Tracing.newBuilder().build();
+    assertThat(tracing).extracting("tracer.pendingSpans.defaultSpan.localServiceName")
+      .isEqualTo("unknown");
+    assertThat(tracing).extracting("tracer.pendingSpans.defaultSpan.localIp")
+      .isEqualTo(Platform.get().linkLocalIp());
+  }
+
   @Test public void localServiceNamePreservesCase() {
     String expectedLocalServiceName = "FavStar";
     Tracing.Builder builder = Tracing.newBuilder().localServiceName(expectedLocalServiceName);
@@ -103,7 +112,7 @@ public class TracingTest {
 
   @Test public void spanHandler_loggingByDefault() {
     try (Tracing tracing = Tracing.newBuilder().build()) {
-      assertThat(tracing.tracer().pendingSpans).extracting("spanHandler.delegate")
+      assertThat((Object) tracing.tracer().pendingSpans).extracting("spanHandler.delegate")
         .isInstanceOf(Tracing.LogSpanHandler.class);
     }
   }
@@ -112,7 +121,7 @@ public class TracingTest {
     try (Tracing tracing = Tracing.newBuilder()
       .addSpanHandler(SpanHandler.NOOP)
       .build()) {
-      assertThat(tracing.tracer().pendingSpans).extracting("spanHandler.delegate")
+      assertThat((Object) tracing.tracer().pendingSpans).extracting("spanHandler.delegate")
         .isInstanceOf(Tracing.LogSpanHandler.class);
     }
   }
@@ -132,7 +141,7 @@ public class TracingTest {
       .addSpanHandler(one)
       .addSpanHandler(two)
       .build()) {
-      assertThat(tracing.tracer().pendingSpans).extracting("spanHandler.delegate.handlers")
+      assertThat((Object) tracing.tracer().pendingSpans).extracting("spanHandler.delegate.handlers")
         .asInstanceOf(InstanceOfAssertFactories.array(SpanHandler[].class))
         .containsExactly(one, two);
     }
@@ -150,7 +159,7 @@ public class TracingTest {
       .addSpanHandler(spanHandler)
       .addSpanHandler(spanHandler) // dupe
       .build()) {
-      assertThat(tracing.tracer().pendingSpans).extracting("spanHandler.delegate")
+      assertThat((Object) tracing.tracer().pendingSpans).extracting("spanHandler.delegate")
         .isEqualTo(spanHandler);
     }
   }

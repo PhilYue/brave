@@ -16,11 +16,12 @@ package brave.spring.rabbit;
 import brave.handler.MutableSpan;
 import brave.messaging.MessagingRuleSampler;
 import brave.sampler.Sampler;
-
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.Test;
 import org.springframework.amqp.core.Message;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
 import static brave.Span.Kind.CONSUMER;
 import static brave.Span.Kind.PRODUCER;
@@ -163,5 +164,29 @@ public class ITSpringRabbitTracing extends ITSpringRabbit {
       .isEqualTo("next-message");
     assertThat(consumerSpanHandler.takeLocalSpan().name())
       .isEqualTo("on-message");
+  }
+
+  @Test public void traceContinuesToReply() {
+    produceUntracedMessage(TEST_EXCHANGE_REQUEST_REPLY, binding_request);
+    awaitReplyMessageConsumed();
+
+    MutableSpan requestConsumerSpan = consumerSpanHandler.takeRemoteSpan(CONSUMER);
+    MutableSpan replyProducerSpan = consumerSpanHandler.takeRemoteSpan(PRODUCER);
+    MutableSpan requestListenerSpan = consumerSpanHandler.takeLocalSpan();
+    MutableSpan replyConsumerSpan = consumerSpanHandler.takeRemoteSpan(CONSUMER);
+    MutableSpan replyListenerSpan = consumerSpanHandler.takeLocalSpan();
+
+    assertThat(requestConsumerSpan.parentId()).isNull();
+    assertThat(requestListenerSpan.parentId()).isEqualTo(requestConsumerSpan.id());
+    assertThat(replyProducerSpan.parentId()).isEqualTo(requestListenerSpan.id());
+    assertThat(replyConsumerSpan.parentId()).isEqualTo(replyProducerSpan.id());
+    assertThat(replyListenerSpan.parentId()).isEqualTo(replyConsumerSpan.id());
+
+    assertThat(Arrays.asList(
+      requestListenerSpan,
+      replyProducerSpan,
+      replyConsumerSpan,
+      replyListenerSpan
+    )).extracting(MutableSpan::traceId).containsOnly(requestConsumerSpan.traceId());
   }
 }
